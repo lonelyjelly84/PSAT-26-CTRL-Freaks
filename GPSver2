@@ -1,0 +1,66 @@
+#include <stdio.h>
+#include <string.h>
+#include "driver/uart.h"
+#include "esp_log.h"
+
+#define GPS_UART UART_NUM_1
+#define GPS_RX_PIN 18
+#define GPS_TX_PIN 19
+
+#define BUF_SIZE 256
+
+static const char *TAG = "GPS";
+
+void process_nmea(char *sentence) {
+    if (strstr(sentence, "$GPRMC") == NULL) return;
+
+    char temp[256];
+    strcpy(temp, sentence);
+
+    char *token = strtok(temp, ",");   // $GPRMC
+    token = strtok(NULL, ",");         // time
+    token = strtok(NULL, ",");         // status A/V
+
+    if (!token || token[0] == 'V') {
+        ESP_LOGW(TAG, "No GPS fix yet");
+        return;
+    }
+
+    char *lat = strtok(NULL, ",");
+    char *lat_dir = strtok(NULL, ",");
+
+    char *lon = strtok(NULL, ",");
+    char *lon_dir = strtok(NULL, ",");
+
+    ESP_LOGI(TAG, "LAT: %s %s | LON: %s %s", lat, lat_dir, lon, lon_dir);
+}
+
+void app_main(void) {
+    uart_config_t cfg = {
+        .baud_rate = 9600,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+    };
+
+    uart_param_config(GPS_UART, &cfg);
+    uart_set_pin(GPS_UART, GPS_TX_PIN, GPS_RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+    uart_driver_install(GPS_UART, 2048, 0, 0, NULL, 0);
+
+    uint8_t buf[BUF_SIZE];
+    static char line[256];
+    static int line_pos = 0;
+
+    while (1) {
+        int len = uart_read_bytes(GPS_UART, buf, sizeof(buf), 50 / portTICK_PERIOD_MS);
+        for (int i = 0; i < len; i++) {
+            char c = buf[i];
+
+            if (c == '\n') {
+                line[line_pos] = 0;
+                ESP_LOGI(TAG, "%s", line);
+                process_nmea(line);
+                line_pos = 0;
+            } else if (c != '\r' && line_pos < sizeof(line)-1) {
+                line[line_pos++] = c;
