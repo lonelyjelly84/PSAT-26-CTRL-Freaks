@@ -64,3 +64,8 @@ void app_main(void) {
                 line_pos = 0;
             } else if (c != '\r' && line_pos < sizeof(line)-1) {
                 line[line_pos++] = c;
+            }
+        }
+    }
+}
+
